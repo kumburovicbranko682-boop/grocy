@@ -8,6 +8,72 @@ use Psr\Http\Message\ServerRequestInterface as Request;
 use Psr\Http\Server\RequestHandlerInterface as RequestHandler;
 use Slim\Routing\RouteContext;
 
+/**
+ * Base authentication middleware for Grocy.
+ *
+ * The concrete authentication strategy is determined by the `AUTH_CLASS`
+ * container setting (set in `data/config.php`). Available implementations:
+ *
+ * - \Grocy\Middleware\DefaultAuthMiddleware  – built-in username/password (default)
+ * - \Grocy\Middleware\ApiKeyAuthMiddleware   – API key via header
+ * - \Grocy\Middleware\SessionAuthMiddleware  – session-cookie based (alias of Default)
+ * - \Grocy\Middleware\LdapAuthMiddleware     – LDAP / Active Directory bind
+ * - \Grocy\Middleware\ReverseProxyAuthMiddleware – trust a reverse-proxy header
+ *
+ * ## Bypass flags (all disable real authentication)
+ *
+ * | Constant / env var          | Effect |
+ * |-----------------------------|--------|
+ * | `GROCY_MODE`                | Authentication is bypassed when set to `dev`, `demo`, or `prerelease`. |
+ * | `GROCY_IS_EMBEDDED_INSTALL` | When truthy, authentication is bypassed. |
+ * | `GROCY_DISABLE_AUTH`        | When truthy, authentication is bypassed. |
+ *                              | ⚠️  **WARNING:** Setting `GROCY_DISABLE_AUTH` exposes the entire instance
+ *                              |    without any access control. Only use in isolated, trusted networks. |
+ *
+ * ## ApiKeyAuthMiddleware configuration
+ *
+ * The API key header name defaults to `GROCY-API-KEY`. Override it by setting
+ * the `ApiKeyHeaderName` key in the DI container configuration:
+ *
+ *     $container->set('ApiKeyHeaderName', 'X-Custom-Key');
+ *
+ * The API key itself is the user's API key stored in the `users` table
+ * (`api_key` column) and must be sent in the request header.
+ *
+ * ## LdapAuthMiddleware configuration
+ *
+ * Required constants / environment variables:
+ *
+ * | Constant                  | Example                                  | Description                         |
+ * |---------------------------|------------------------------------------|-------------------------------------|
+ * | `GROCY_LDAP_ADDRESS`      | `ldap://ldap.example.com:389`            | LDAP server URI                     |
+ * | `GROCY_LDAP_BASE_DN`      | `dc=example,dc=com`                      | Base DN for user lookups            |
+ * | `GROCY_LDAP_BIND_DN`      | `cn=readonly,dc=example,dc=com`          | DN used for the initial bind        |
+ * | `GROCY_LDAP_BIND_PW`      | `s3cret`                                 | Password for the bind DN            |
+ * | `GROCY_LDAP_UID_ATTR`     | `uid` (or `sAMAccountName` for AD)       | Attribute that matches the username |
+ * | `GROCY_LDAP_USER_FILTER`  | `(&(objectClass=person)(uid=%s))`        | LDAP search filter; `%s` is replaced with the username |
+ * | `GROCY_LDAP_IGNORE_CERT`  | `false`                                  | Set to `true` to skip TLS certificate verification (not recommended for production) |
+ *
+ * If a user does not yet exist locally, it is auto-created on first successful
+ * LDAP login (same behaviour as `DefaultAuthMiddleware` auto-creation).
+ *
+ * ## ReverseProxyAuthMiddleware configuration
+ *
+ * Required constants / environment variables:
+ *
+ * | Constant                          | Example            | Description                           |
+ * |-----------------------------------|--------------------|---------------------------------------|
+ * | `GROCY_REVERSE_PROXY_AUTH_USE_ENV`| `true`             | Must be truthy to enable this mode    |
+ * | `GROCY_REVERSE_PROXY_AUTH_HEADER` | `REMOTE_USER`      | Server variable or header that contains the authenticated username |
+ *
+ * Ensure that your reverse-proxy strips or overwrites the header from
+ * external requests so that clients cannot spoof identities.
+ *
+ * @see \Grocy\Middleware\DefaultAuthMiddleware
+ * @see \Grocy\Middleware\ApiKeyAuthMiddleware
+ * @see \Grocy\Middleware\LdapAuthMiddleware
+ * @see \Grocy\Middleware\ReverseProxyAuthMiddleware
+ */
 abstract class AuthMiddleware extends BaseMiddleware
 {
 	public function __invoke(Request $request, RequestHandler $handler): Response
